@@ -3,15 +3,15 @@ from .basics import softmax, linear
 
 
 def scaled_dot_product_attention_simple(
-    query: mx.array,              # [..., L, D]
-    key: mx.array,                # [..., L, D]
-    value: mx.array,              # [..., L, D]
+    query: mx.array,              # [..., L, D_k]
+    key: mx.array,                # [..., L, D_k]
+    value: mx.array,              # [..., L, D_v]
     scale: float | None = None,
     mask: mx.array | None = None, # [..., L, L]
 ) -> mx.array:
-    D = query.shape[-1]
+    D_k = query.shape[-1]
     if scale is None:
-        scale = 1.0 / mx.sqrt(D)
+        scale = 1.0 / mx.sqrt(D_k)
 
     # softmax(QK^t/d_k + mask)V
     scores = mx.matmul(query, key.swapaxes(-2, -1)) * scale
@@ -27,10 +27,10 @@ class SimpleMultiHeadAttention:
         self,
         hidden_size: int, # H * D
         num_heads: int,   # H
-        wq: mx.array,     # [H*D, E]
-        wk: mx.array,     # [H*D, E]
-        wv: mx.array,     # [H*D, E]
-        wo: mx.array,     # [E, H*D]
+        wq: mx.array,     # [H*D_k, E]
+        wk: mx.array,     # [H*D_k, E]
+        wv: mx.array,     # [H*D_v, E]
+        wo: mx.array,     # [E, H*D_v]
     ):
         self.hidden_size = hidden_size
         self.num_heads = num_heads
