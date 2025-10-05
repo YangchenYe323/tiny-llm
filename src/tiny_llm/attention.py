@@ -3,13 +3,14 @@ from .basics import softmax, linear
 
 
 def scaled_dot_product_attention_simple(
-    query: mx.array,              # [..., L, D_k]
-    key: mx.array,                # [..., L, D_k]
-    value: mx.array,              # [..., L, D_v]
+    query: mx.array,              # [..., L_q, D_k]
+    key: mx.array,                # [..., L_k, D_k]
+    value: mx.array,              # [..., L_k, D_v]
     scale: float | None = None,
     mask: mx.array | None = None, # [..., L, L]
 ) -> mx.array:
-    D_k = query.shape[-1]
+    D_k = key.shape[-1]
+
     if scale is None:
         scale = 1.0 / mx.sqrt(D_k)
 
@@ -75,21 +76,68 @@ class SimpleMultiHeadAttention:
         return mx.matmul(trans_scores, mx.swapaxes(self.wo, -2, -1))
 
 
-
-
-
-def causal_mask(L: int, S: int, dtype: mx.Dtype) -> mx.array:
-    pass
+def causal_mask(L_q: int, L_v: int, dtype: mx.Dtype) -> mx.array:
+    L = max(L_q, L_v)
+    mask = mx.full([L, L], -mx.inf, dtype)
+    mask = mx.triu(mask, 1)
+    mask = mask[L-L_q:,L-L_v:]
+    return mask
 
 
 def scaled_dot_product_attention_grouped(
-    query: mx.array,
-    key: mx.array,
-    value: mx.array,
+    query: mx.array, # [..., H_q, L_q, D]
+    key: mx.array,   # [..., H_k, L, D]
+    value: mx.array, # [..., H_v, L, D]
     scale: float | None = None,
     mask: mx.array | str | None = None,
 ) -> mx.array:
-    pass
+    D = query.shape[-1]
+    L_q = query.shape[-2]
+    L_k = key.shape[-2]
+    L_v = value.shape[-2]
+    H_q = query.shape[-3]
+    H_k = key.shape[-3]
+    H_v = value.shape[-3]
+
+    assert H_k == H_v
+    assert H_q % H_k == 0
+
+    n_repeat = H_q // H_k
+
+    query_shape = query.shape
+    # Expected reshape of the query. [..., H_k, n_repeat, L_q, D]
+    query_reshape = list(query.shape[:-3]) + [H_k, n_repeat, L_q, D]
+    query = mx.reshape(query, query_reshape)
+
+
+    # Expected reshape of key. [..., H_k, 1, L_k, D]
+    key_reshape = list(key.shape[:-3]) + [H_k, 1, L_k, D]
+    key = mx.reshape(key, key_reshape)
+
+    # Expected reshape of value. [..., H_k, 1, L_v, D]
+    value_reshape = list(value.shape[:-3]) + [H_k, 1, L_v, D]
+    value = mx.reshape(value, value_reshape)
+    
+    if scale is None:
+        scale = 1.0 / mx.sqrt(D)
+
+    # softmax(QK^t/d_k + mask)V
+    scores = mx.matmul(query, key.swapaxes(-2, -1)) * scale
+    if mask is not None:
+        if isinstance(mask, mx.array):
+            # Expected reshape of mask. [..., H_k, n_repeat, L_q, L_v]
+            mask_reshape = list(mask.shape[:-3]) + [H_k, n_repeat, L_q, L_v]
+            mask = mx.reshape(mask, mask_reshape)
+        else:
+            if mask == "causal":
+                mask = causal_mask(L_q, L_v, query.dtype)
+            else:
+                raise Exception("Unknown mask type")
+        scores = scores + mask
+
+    out = mx.matmul(softmax(scores, axis=-1), value)
+    out = mx.reshape(out, query_shape)
+    return out
 
 
 def flash_attention(
