@@ -38,14 +38,17 @@ class RoPE:
         x: mx.array,
         offset: list[slice] | slice | None = None
     ) -> mx.array:
-        N, L, H, D = x.shape
+        L = x.shape[-3]
+        H = x.shape[-2]
+        D = x.shape[-1]
+        batches = x.shape[:-3]
 
         assert D == self.dims
         assert L <= self.seq_len
 
         sin, cos = self._extact_sin_cos(L, offset=offset)
         
-        x = mx.reshape(x, [N, L, H, D // 2, 2])
+        x = mx.reshape(x, list(batches) + [L, H, D // 2, 2])
 
         # Even indices
         x0 = x[..., 0]
@@ -60,7 +63,7 @@ class RoPE:
         out1 = x0 * sin + x1 * cos
 
         out = mx.stack([out0, out1], axis=-1)
-        out = mx.reshape(out, [N, L, H, D])
+        out = mx.reshape(out, list(batches) + [L, H, D])
         return out
     
     def encode_non_traditional(
@@ -68,7 +71,10 @@ class RoPE:
         x: mx.array,
         offset: list[slice] | slice | None = None
     ) -> mx.array:
-        N, L, H, D = x.shape
+        L = x.shape[-3]
+        H = x.shape[-2]
+        D = x.shape[-1]
+        batches = x.shape[:-3]
 
         assert D == self.dims
         assert L <= self.seq_len
@@ -78,7 +84,7 @@ class RoPE:
         # Instead of paring between i and i+1,
         # non-traditional RoPE can be viewed as paring between
         # i and D//2 + i + 1
-        x = mx.reshape(x, [N, L, H, 2, D//2])
+        x = mx.reshape(x, list(batches) + [L, H, 2, D//2])
 
         # First Half
         x0 = x[...,0,:]
@@ -92,7 +98,7 @@ class RoPE:
         out2 = x0 * sin + x1 * cos
 
         out = mx.concatenate([out1, out2], -1)
-        out = mx.reshape(out, [N, L, H, D])
+        out = mx.reshape(out, list(batches) + [L, H, D])
         return out
     
     def _extact_sin_cos(self, L: int, offset: list[slice] | slice | None = None,) -> tuple[mx.array, mx.array]:

@@ -49,17 +49,21 @@ class Qwen2MultiHeadAttention:
         k = linear(x, self.wk, self.bk)
         v = linear(x, self.wv, self.bv)
 
-        N, L_q, D_q = q.shape
-        N, L_k, D_k = k.shape
-        N, L_v, D_v = v.shape
+        L_q = q.shape[-2]
+        D_q = q.shape[-1]
+        L_k = k.shape[-2]
+        D_k = k.shape[-1]
+        L_v = v.shape[-2]
+        D_v = v.shape[-1]
+        batches = q.shape[:-2]
 
         assert D_q == self.num_heads * self.head_dim
         assert D_k == self.num_kv_heads * self.head_dim
         assert D_v == self.num_kv_heads * self.head_dim
 
-        q = mx.reshape(q, [N, L_q, self.num_heads, self.head_dim])
-        k = mx.reshape(k, [N, L_k, self.num_kv_heads, self.head_dim])
-        v = mx.reshape(v, [N, L_v, self.num_kv_heads, self.head_dim])
+        q = mx.reshape(q, list(batches) + [L_q, self.num_heads, self.head_dim])
+        k = mx.reshape(k, list(batches) + [L_k, self.num_kv_heads, self.head_dim])
+        v = mx.reshape(v, list(batches) + [L_v, self.num_kv_heads, self.head_dim])
         q = self.rope(q)
         k = self.rope(k)
 
@@ -72,7 +76,7 @@ class Qwen2MultiHeadAttention:
         x = scaled_dot_product_attention_grouped(q, k, v, mask=mask)
         x = mx.swapaxes(x, -2, -3)
 
-        x = mx.reshape(x, [N, L_q, D_q])
+        x = mx.reshape(x, list(batches) + [L_q, D_q])
         x = linear(x, self.wo)
 
         return x
@@ -188,7 +192,6 @@ class Qwen2TransformerBlock:
 
 class Qwen2ModelWeek1:
     def __init__(self, mlx_model: Any):
-        print(mlx_model.args)
         vocab_size = mlx_model.args.vocab_size
         hidden_size = mlx_model.args.hidden_size
         # num_hidden_layers = mlx_model.args.num_hidden_layers
